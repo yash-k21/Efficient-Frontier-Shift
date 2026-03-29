@@ -13,7 +13,6 @@ def long_only_frontier(mean_ret, cov, n_points=100):
     bounds = [(0, 1)] * n
     sum_constraint = {'type': 'eq', 'fun': lambda w: w.sum() - 1}
 
-    # find MVP return (lower bound)
     mvp = minimize(lambda w: w @ cov @ w, w0, bounds=bounds, constraints=sum_constraint)
     ret_min = mean_ret @ mvp.x
     ret_max = mean_ret.max()
