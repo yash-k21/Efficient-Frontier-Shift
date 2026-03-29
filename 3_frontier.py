@@ -30,51 +30,51 @@ def long_only_frontier(mean_ret, cov, n_points=100):
 
     return frontier_std, frontier_mean
 
-# Pre-COVID
-print("Pre-COVID: loading data...")
-mean_ret_pre = pd.read_csv('Data/monthly/pre-covid/mu_pre_monthly.csv', index_col=0).squeeze().values
-cov_pre = pd.read_csv('Data/monthly/pre-covid/sigma_pre_monthly.csv', index_col=0).values
-n = len(mean_ret_pre)
+for freq in ('daily', 'weekly', 'monthly'):
+    print(f"\n=== {freq.upper()} ===")
 
-print(f"Pre-COVID: simulating {N} portfolios...")
-means_pre, stds_pre = np.zeros(N), np.zeros(N)
-for i in range(N):
-    w = np.random.dirichlet(np.ones(n) * 0.5)
-    means_pre[i] = mean_ret_pre @ w
-    stds_pre[i] = np.sqrt(w @ cov_pre @ w)
-    if (i + 1) % (N // 10) == 0:
-        print(f"  Pre-COVID: {(i + 1) * 100 // N}% done")
+    print(f"{freq} Pre-COVID: loading data...")
+    mean_ret_pre = pd.read_csv(f'Data/{freq}/pre-covid/mu_pre_{freq}.csv', index_col=0).squeeze().values
+    cov_pre = pd.read_csv(f'Data/{freq}/pre-covid/sigma_pre_{freq}.csv', index_col=0).values
+    n = len(mean_ret_pre)
 
-print("Pre-COVID: computing long-only frontier...")
-frontier_std_pre, frontier_mean_pre = long_only_frontier(mean_ret_pre, cov_pre)
+    print(f"{freq} Pre-COVID: simulating {N} portfolios...")
+    means_pre, stds_pre = np.zeros(N), np.zeros(N)
+    for i in range(N):
+        w = np.random.dirichlet(np.ones(n) * 0.5)
+        means_pre[i] = mean_ret_pre @ w
+        stds_pre[i] = np.sqrt(w @ cov_pre @ w)
+        if (i + 1) % (N // 10) == 0:
+            print(f"  Pre-COVID: {(i + 1) * 100 // N}% done")
 
-# Post-COVID
-print("Post-COVID: loading data...")
-mean_ret_post = pd.read_csv('Data/monthly/post-covid/mu_post_monthly.csv', index_col=0).squeeze().values
-cov_post = pd.read_csv('Data/monthly/post-covid/sigma_post_monthly.csv', index_col=0).values
+    print(f"{freq} Pre-COVID: computing long-only frontier...")
+    frontier_std_pre, frontier_mean_pre = long_only_frontier(mean_ret_pre, cov_pre)
 
-print(f"Post-COVID: simulating {N} portfolios...")
-means_post, stds_post = np.zeros(N), np.zeros(N)
-for i in range(N):
-    w = np.random.dirichlet(np.ones(n) * 0.5)
-    means_post[i] = mean_ret_post @ w
-    stds_post[i] = np.sqrt(w @ cov_post @ w)
-    if (i + 1) % (N // 10) == 0:
-        print(f"  Post-COVID: {(i + 1) * 100 // N}% done")
+    print(f"{freq} Post-COVID: loading data...")
+    mean_ret_post = pd.read_csv(f'Data/{freq}/post-covid/mu_post_{freq}.csv', index_col=0).squeeze().values
+    cov_post = pd.read_csv(f'Data/{freq}/post-covid/sigma_post_{freq}.csv', index_col=0).values
 
-print("Post-COVID: computing long-only frontier...")
-frontier_std_post, frontier_mean_post = long_only_frontier(mean_ret_post, cov_post)
+    print(f"{freq} Post-COVID: simulating {N} portfolios...")
+    means_post, stds_post = np.zeros(N), np.zeros(N)
+    for i in range(N):
+        w = np.random.dirichlet(np.ones(n) * 0.5)
+        means_post[i] = mean_ret_post @ w
+        stds_post[i] = np.sqrt(w @ cov_post @ w)
+        if (i + 1) % (N // 10) == 0:
+            print(f"  Post-COVID: {(i + 1) * 100 // N}% done")
 
-# Combined plot
-fig, ax = plt.subplots()
-ax.scatter(stds_pre, means_pre, s=5, color='steelblue', linewidths=0, alpha=0.3, label='Feasible Set Pre-COVID')
-ax.scatter(stds_post, means_post, s=5, color='darkorange', linewidths=0, alpha=0.3, label='Feasible Set Post-COVID')
-ax.plot(frontier_std_pre, frontier_mean_pre, color='steelblue', linewidth=2, label='Efficient Frontier Pre-COVID')
-ax.plot(frontier_std_post, frontier_mean_post, color='darkorange', linewidth=2, label='Efficient Frontier Post-COVID')
-ax.set_xlabel('Standard Deviation')
-ax.set_ylabel('Expected Return')
-ax.set_title('Efficient Frontier Shift - Pre vs Post COVID')
-ax.legend()
-fig.savefig('Figures/frontier_combined.png', dpi=150, bbox_inches='tight')
-plt.close()
-print("Combined plot saved.")
+    print(f"{freq} Post-COVID: computing long-only frontier...")
+    frontier_std_post, frontier_mean_post = long_only_frontier(mean_ret_post, cov_post)
+
+    fig, ax = plt.subplots()
+    ax.scatter(stds_pre, means_pre, s=5, color='steelblue', linewidths=0, alpha=0.3, label='Feasible Set Pre-COVID')
+    ax.scatter(stds_post, means_post, s=5, color='darkorange', linewidths=0, alpha=0.3, label='Feasible Set Post-COVID')
+    ax.plot(frontier_std_pre, frontier_mean_pre, color='steelblue', linewidth=2, label='Efficient Frontier Pre-COVID')
+    ax.plot(frontier_std_post, frontier_mean_post, color='darkorange', linewidth=2, label='Efficient Frontier Post-COVID')
+    ax.set_xlabel('Standard Deviation')
+    ax.set_ylabel('Expected Return')
+    ax.set_title(f'Efficient Frontier Shift - Pre vs Post COVID ({freq.capitalize()})')
+    ax.legend()
+    fig.savefig(f'Figures/frontier_combined_{freq}.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"{freq} plot saved.")
