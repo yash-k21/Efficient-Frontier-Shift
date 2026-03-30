@@ -1,0 +1,24 @@
+Risk-Free Rate Summary Statistics
+==================================================
+
+Data Source: US 3-Month Treasury Bill (^IRX)
+Date Range: 2015-01-01 00:00:00 to 2026-03-30 00:00:00
+Total Days: 4107
+
+Period Averages (Annualized):
+--------------------------------------------------
+pre_covid      : 0.013995 (1.3995%)
+post_covid     : 0.027795 (2.7795%)
+full           : 0.020897 (2.0897%)
+
+Descriptive Statistics:
+--------------------------------------------------
+       Risk_Free_Rate
+count     4107.000000
+mean         0.023561
+std          0.017916
+min          0.002000
+25%          0.005000
+50%          0.020000
+75%          0.045000
+max          0.045000
