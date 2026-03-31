@@ -1,14 +1,14 @@
 """
 Download and prepare risk-free rate data for efficient frontier analysis.
 
-This script downloads risk-free rate data and prepares it for use with
+This script downloads 91-Day T-Bill rate data and prepares it for use with
 the efficient frontier pipeline. It handles:
-- Downloading Indian 91-day T-bill rates or US Treasury rates as proxy
+- Downloading US 91-Day Treasury Bill rates (3-month T-bills via ^IRX)
 - Formatting data with proper date indexing
 - Saving to Data/risk_free_rates.csv
 
-For Indian stocks (NIFTY), we'll use US Treasury 3-month rates as a proxy
-since they are easily accessible and widely used in academic research.
+The 91-Day T-Bill rate is the standard risk-free rate used in finance,
+representing the yield on short-term US government debt with virtually zero risk.
 """
 
 import pandas as pd
@@ -19,7 +19,10 @@ from datetime import datetime, timedelta
 
 def download_treasury_rates(start_date='2015-01-01', end_date=None):
     """
-    Download US 3-month Treasury rates as proxy for risk-free rate.
+    Download US 91-Day Treasury Bill rates from appropriate periods.
+    
+    The ^IRX ticker provides the 13-week (91-day) Treasury Bill rate,
+    which is the standard risk-free rate in portfolio theory.
     
     Parameters:
     -----------
@@ -35,18 +38,22 @@ def download_treasury_rates(start_date='2015-01-01', end_date=None):
     if end_date is None:
         end_date = datetime.now().strftime('%Y-%m-%d')
     
-    print(f"Downloading Treasury rates from {start_date} to {end_date}...")
+    print(f"Downloading 91-Day T-Bill rates from {start_date} to {end_date}...")
     
     try:
-        # Download 3-month Treasury rate (^IRX gives rates in percentage)
+        # Download 91-day (13-week) Treasury Bill rate
+        # ^IRX ticker provides the rate as a percentage (e.g., 1.5 for 1.5%)
         treasury = yf.download('^IRX', start=start_date, end=end_date, progress=False)
         
         if treasury.empty:
             print("Warning: No Treasury data downloaded. Using fallback method.")
             return create_fallback_rates(start_date, end_date)
         
-        # Use Close price (represents the yield percentage)
-        rates = treasury['Close'].copy()
+        # Handle multi-level columns from yfinance (Price/Close format)
+        if isinstance(treasury.columns, pd.MultiIndex):
+            rates = treasury['Close']['^IRX'].copy()
+        else:
+            rates = treasury['Close'].copy()
         
         # Convert from percentage to decimal (e.g., 5.0 -> 0.05)
         rates = rates / 100.0
@@ -56,11 +63,12 @@ def download_treasury_rates(start_date='2015-01-01', end_date=None):
             'Risk_Free_Rate': rates
         })
         
-        # Handle missing values with forward fill
+        # Handle missing values with forward fill (markets closed on weekends/holidays)
         rf_data = rf_data.ffill().bfill()
         
-        print(f"Downloaded {len(rf_data)} days of Treasury rate data")
+        print(f"Downloaded {len(rf_data)} days of 91-Day T-Bill rate data")
         print(f"Average rate: {rf_data['Risk_Free_Rate'].mean():.4f} ({rf_data['Risk_Free_Rate'].mean()*100:.2f}%)")
+        print(f"Date range: {rf_data.index[0].date()} to {rf_data.index[-1].date()}")
         
         return rf_data
         
@@ -72,15 +80,15 @@ def download_treasury_rates(start_date='2015-01-01', end_date=None):
 
 def create_fallback_rates(start_date, end_date):
     """
-    Create fallback risk-free rates based on historical averages.
+    Create fallback risk-free rates based on historical 91-Day T-Bill averages.
     
-    Uses approximate rates:
-    - 2015-2016: ~0.5%
-    - 2017-2019: ~2.0%
-    - 2020-2021: ~0.2% (COVID low rates)
-    - 2022-2024: ~4.5% (post-COVID rate hikes)
+    Uses approximate historical 91-Day T-Bill rates:
+    - 2015-2016: ~0.5%  (near-zero rate environment)
+    - 2017-2019: ~2.0%  (gradual rate increases)
+    - 2020-2021: ~0.2%  (COVID emergency low rates)
+    - 2022-2024: ~4.5%  (post-COVID rate hikes)
     """
-    print("Creating fallback risk-free rates based on historical periods...")
+    print("Creating fallback 91-Day T-Bill rates based on historical periods...")
     
     dates = pd.date_range(start=start_date, end=end_date, freq='D')
     rates = []
@@ -143,10 +151,10 @@ def compute_period_averages(rf_data):
 
 def main():
     """
-    Main function to download and save risk-free rate data.
+    Main function to download and save 91-Day T-Bill rate data.
     """
     print("=" * 60)
-    print("Risk-Free Rate Data Preparation")
+    print("91-Day T-Bill Risk-Free Rate Data Preparation")
     print("=" * 60)
     print()
     
@@ -168,7 +176,8 @@ def main():
     with open(summary_file, 'w') as f:
         f.write("Risk-Free Rate Summary Statistics\n")
         f.write("=" * 50 + "\n\n")
-        f.write(f"Data Source: US 3-Month Treasury Bill (^IRX)\n")
+        f.write(f"Data Source: US 91-Day Treasury Bill (^IRX)\n")
+        f.write(f"Note: The ^IRX ticker represents the 13-week (91-day) T-Bill yield\n")
         f.write(f"Date Range: {rf_data.index[0]} to {rf_data.index[-1]}\n")
         f.write(f"Total Days: {len(rf_data)}\n\n")
         
