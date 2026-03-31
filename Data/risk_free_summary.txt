@@ -1,25 +1,26 @@
 Risk-Free Rate Summary Statistics
 ==================================================
 
-Data Source: US 91-Day Treasury Bill (^IRX)
-Note: The ^IRX ticker represents the 13-week (91-day) T-Bill yield
-Date Range: 2015-01-02 00:00:00 to 2026-03-27 00:00:00
-Total Days: 2824
+Data Source: Reserve Bank of India (RBI)
+Security: 91-Day Government of India Treasury Bills
+Note: Auction data converted to daily rates using forward fill
+Date Range: 2015-01-01 00:00:00 to 2025-03-26 00:00:00
+Total Days: 3738
 
 Period Averages (Annualized):
 --------------------------------------------------
-pre_covid      : 0.010456 (1.0456%)
-post_covid     : 0.024676 (2.4676%)
-full           : 0.017569 (1.7569%)
+pre_covid      : 0.065775 (6.5775%)
+post_covid     : 0.051268 (5.1268%)
+full           : 0.058520 (5.8520%)
 
 Descriptive Statistics:
 --------------------------------------------------
        Risk_Free_Rate
-count     2824.000000
-mean         0.019981
-std          0.018928
-min         -0.001050
-25%          0.001773
-50%          0.015250
-75%          0.040268
-max          0.053480
+count     3738.000000
+mean         0.058668
+std          0.014084
+min          0.029003
+25%          0.050703
+50%          0.063563
+75%          0.068121
+max          0.083946
