@@ -1,0 +1,2 @@
+JK_SR_pre,JK_SR_post,JK_delta_SR,JK_z,JK_p,JK_significant,JK_boot_d_obs,JK_boot_p,JK_boot_significant,LW_shrinkage_pre,LW_shrinkage_post,boot_B,boot_n_sig_vol_pts,boot_pct_significant,boot_shift_significant
+1.025,1.918,0.893,1.268,0.1023,False,1.253,0.2173,False,0.02,0.036,500,0,0.0,False

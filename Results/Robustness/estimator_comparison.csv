@@ -1,0 +1,7 @@
+Period,Estimator,MS_vol,MS_ret,SR
+Pre,Sample covariance,0.1378,0.1875,0.887
+Pre,Equal-correlation,0.1377,0.1888,0.896
+Pre,Ledoit-Wolf (primary),0.1348,0.1867,0.9
+Post,Sample covariance,0.1119,0.3075,2.231
+Post,Equal-correlation,0.1188,0.3124,2.143
+Post,Ledoit-Wolf (primary),0.1096,0.3117,2.317

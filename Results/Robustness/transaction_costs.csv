@@ -1,0 +1,5 @@
+Rebalancing,Cost pre (%),Cost post (%),SR pre (gross),SR post (gross),SR pre (net),SR post (net),Delta SR (net),Improvement survives
+Annual,2.08,0.96,0.9,2.317,0.745,2.23,1.485,True
+Semi-annual,4.16,1.92,0.9,2.317,0.591,2.142,1.551,True
+Quarterly,8.32,3.84,0.9,2.317,0.282,1.967,1.685,True
+Monthly,24.96,11.52,0.9,2.317,-0.952,1.266,2.218,True
