@@ -1,0 +1,2 @@
+full_sample_first_crossing_cusum,full_sample_first_crossing_cusum_sq,full_sample_reject_mean_stability,full_sample_reject_var_stability,post_covid_first_crossing_cusum,post_covid_first_crossing_cusum_sq,post_covid_reject_mean_stability,post_covid_reject_var_stability,post_regime_stable,shift_permanent,test,significance_level
+none,2020-04-07,False,True,none,2022-03-07,False,True,False,False,Brown-Durbin-Evans (1975) CUSUM,5%

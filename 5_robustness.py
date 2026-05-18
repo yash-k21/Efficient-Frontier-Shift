@@ -245,6 +245,41 @@ def pstats(w, mu, cov):
     return w @ mu, np.sqrt(w @ cov @ w)
 
 
+def style_ax(ax):
+    ax.set_facecolor("#FAFAFA")
+    for sp in ["top", "right"]:   ax.spines[sp].set_visible(False)
+    for sp in ["left", "bottom"]: ax.spines[sp].set_color("#CCCCCC")
+    ax.grid(True, linestyle="--", linewidth=0.4, color="#DDDDDD", alpha=0.9)
+    ax.tick_params(colors="#666666", labelsize=9)
+
+
+def hhi(w):
+    return float(np.sum(w ** 2))
+
+
+def _student_t_var_cvar(r, level, N=100_000, seed=42):
+    """
+    Student-t Monte Carlo VaR and CVaR at `level` confidence (e.g. 0.95).
+
+    Steps:
+      1. Fit Student-t (df, loc, scale) to the return series via MLE.
+         The fitted df captures tail-fatness; Indian equities typically
+         yield df ≈ 3-6, well below the Gaussian limit.
+      2. Simulate N draws from the fitted distribution.
+      3. VaR  = -(level-th lower percentile of simulated returns)
+      4. CVaR = -(mean of simulated returns below the VaR cutoff)
+
+    Returns daily figures as positive loss fractions, plus fitted df.
+    """
+    df, loc, scale = stats.t.fit(r)
+    sim    = stats.t.rvs(df, loc=loc, scale=scale, size=N,
+                         random_state=seed)
+    cutoff = np.percentile(sim, (1 - level) * 100)
+    var_   = float(-cutoff)
+    cvar_  = float(-sim[sim <= cutoff].mean())
+    return var_, cvar_, float(df)
+
+
 # ════════════════════════════════════════════════════════════════
 # 3. COVARIANCE ESTIMATORS
 # ════════════════════════════════════════════════════════════════
@@ -454,14 +489,23 @@ def plot_bootstrap_frontier_comparison(ret_pre, ret_post,
     PRE_C  = "#1D9E75"
     POST_C = "#534AB7"
 
-    print(f"  Font (2016) bootstrap frontier bands (B={B})...")
-    print("    Pre-COVID period ...", flush=True)
-    vg_pre,  mr_pre,  lo_pre,  hi_pre  = bootstrap_frontier_bands(
-        ret_pre,  B=B, seed=42)
-
-    print("    Post-COVID period ...", flush=True)
-    vg_post, mr_post, lo_post, hi_post = bootstrap_frontier_bands(
-        ret_post, B=B, seed=123)
+    _CACHE = "Results/Robustness/bootstrap_bands_cache.npz"
+    if os.path.exists(_CACHE):
+        print("  Loading cached bootstrap bands...")
+        _c = np.load(_CACHE)
+        vg_pre,  mr_pre,  lo_pre,  hi_pre  = _c["vg_pre"],  _c["mr_pre"],  _c["lo_pre"],  _c["hi_pre"]
+        vg_post, mr_post, lo_post, hi_post = _c["vg_post"], _c["mr_post"], _c["lo_post"], _c["hi_post"]
+    else:
+        print(f"  Font (2016) bootstrap frontier bands (B={B})...")
+        print("    Pre-COVID period ...", flush=True)
+        vg_pre,  mr_pre,  lo_pre,  hi_pre  = bootstrap_frontier_bands(ret_pre,  B=B, seed=42)
+        print("    Post-COVID period ...", flush=True)
+        vg_post, mr_post, lo_post, hi_post = bootstrap_frontier_bands(ret_post, B=B, seed=123)
+        if vg_pre is not None and vg_post is not None:
+            np.savez(_CACHE,
+                     vg_pre=vg_pre,   mr_pre=mr_pre,   lo_pre=lo_pre,   hi_pre=hi_pre,
+                     vg_post=vg_post, mr_post=mr_post, lo_post=lo_post, hi_post=hi_post)
+            print(f"  [saved cache] {_CACHE}")
 
     if vg_pre is None or vg_post is None:
         print("  [warn] bootstrap failed; skipping plot")
@@ -549,558 +593,712 @@ def plot_bootstrap_frontier_comparison(ret_pre, ret_post,
         "shift_significant":      bool(sig_mask.any()),
     }
 
-# # ════════════════════════════════════════════════════════════════
-# # 5. TEST 2 — BOX'S M TEST
-# # ════════════════════════════════════════════════════════════════
-
-# def box_m_test(ret_pre, ret_post):
-#     """
-#     Box's M test for equality of two covariance matrices.
-
-#     H0: Sigma_pre == Sigma_post
-#     """
-#     n1, p = ret_pre.shape
-#     n2, _ = ret_post.shape
-
-#     S1 = ret_pre.cov().values
-#     S2 = ret_post.cov().values
-#     Sp = ((n1 - 1) * S1 + (n2 - 1) * S2) / (n1 + n2 - 2)
-
-#     _, ld1 = np.linalg.slogdet(S1)
-#     _, ld2 = np.linalg.slogdet(S2)
-#     _, ldp = np.linalg.slogdet(Sp)
-
-#     M = ((n1 + n2 - 2) * ldp
-#          - (n1 - 1) * ld1
-#          - (n2 - 1) * ld2)
-
-#     c = (1 - (2 * p**2 + 3 * p - 1) / (6 * (p + 1)) *
-#          (1 / (n1 - 1) + 1 / (n2 - 1) - 1 / (n1 + n2 - 2)))
-
-#     chi2_stat = M * c
-#     df        = p * (p + 1) / 2
-#     p_val     = 1 - stats.chi2.cdf(chi2_stat, df)
-
-#     return {
-#         "M_statistic": round(float(M),         2),
-#         "chi2_stat":   round(float(chi2_stat), 2),
-#         "df":          int(df),
-#         "p_value":     round(float(p_val),     6),
-#         "significant": bool(p_val < 0.05),
-#         "conclusion":  (
-#             "Covariance matrices are SIGNIFICANTLY DIFFERENT "
-#             "(structural change in risk structure confirmed)"
-#             if p_val < 0.05 else
-#             "Cannot reject equal covariance matrices at 5% level"
-#         ),
-#     }
-
-
-# # ════════════════════════════════════════════════════════════════
-# # 6. TEST 3 — COVARIANCE ESTIMATOR COMPARISON
-# # ════════════════════════════════════════════════════════════════
-
-# def plot_estimator_comparison(ret_pre, ret_post,
-#                                rf_pre, rf_post, out_path):
-#     PRE_C  = "#1D9E75"
-#     POST_C = "#534AB7"
-
-#     specs = [
-#         ("Sample covariance",
-#          "#A8D8A8", "#A8A8D8", ":",  1.2),
-#         ("Ledoit-Wolf (primary)",
-#          PRE_C,     POST_C,    "-",  2.2),
-#     ]
-
-#     def get_mu_cov(name, ret):
-#         if name == "Sample covariance":
-#             return sample_cov(ret)
-#         else:
-#             return ledoit_wolf(ret)[:2]
-
-#     fig, axes = plt.subplots(1, 2, figsize=(16, 7),
-#                               sharey=True)
-#     fig.patch.set_facecolor("#FAFAFA")
-
-#     summary_rows = []
-
-#     for ax, ret, rf, title, col_idx in [
-#         (axes[0], ret_pre,  rf_pre,
-#          "Pre-COVID (Jan 2015–Jan 2020)", 0),
-#         (axes[1], ret_post, rf_post,
-#          "Post-COVID (Jul 2021–Dec 2024)", 1),
-#     ]:
-#         ax.set_facecolor("#FAFAFA")
-#         for sp in ["top", "right"]:
-#             ax.spines[sp].set_visible(False)
-#         for sp in ["left", "bottom"]:
-#             ax.spines[sp].set_color("#CCCCCC")
-#         ax.grid(True, linestyle="--", linewidth=0.4,
-#                 color="#DDDDDD", alpha=0.8)
-#         ax.set_title(title, fontsize=10.5,
-#                      color="#333333", pad=8)
-
-#         for name, cp, cq, ls, lw in specs:
-#             print(f"    [{title[:3]}] {name}...")
-#             mu, cov = get_mu_cov(name, ret)
-#             c       = cp if col_idx == 0 else cq
-
-#             v, r    = frontier_points(mu, cov, n_pts=80)
-#             ax.plot(v, r, color=c, lw=lw, ls=ls,
-#                     label=name, zorder=4)
-
-#             w_ms       = max_sharpe(mu, cov, rf)
-#             r_ms, v_ms = pstats(w_ms, mu, cov)
-#             sr         = (r_ms - rf) / v_ms
-#             ax.scatter(v_ms, r_ms, color=c,
-#                        s=85, marker="D", zorder=6)
-
-#             summary_rows.append({
-#                 "Period":    "Pre" if col_idx == 0 else "Post",
-#                 "Estimator": name,
-#                 "MS_vol":    round(v_ms, 4),
-#                 "MS_ret":    round(r_ms, 4),
-#                 "SR":        round(sr,   3),
-#             })
-
-#         ax.yaxis.set_major_formatter(
-#             plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
-#         ax.xaxis.set_major_formatter(
-#             plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
-#         ax.set_xlabel("Annualised Volatility (σ)",
-#                       fontsize=10, color="#555555")
-#         if col_idx == 0:
-#             ax.set_ylabel("Annualised Return (μ)",
-#                           fontsize=10, color="#555555")
-#         ax.legend(fontsize=9, framealpha=0.65,
-#                   loc="upper left")
-#         ax.tick_params(colors="#666666", labelsize=9)
-
-#     fig.suptitle(
-#         "Robustness to Covariance Estimator Choice\n"
-#         "All three methods should show the same "
-#         "directional shift if the result is genuine",
-#         fontsize=12, fontweight="500",
-#         color="#222222", y=1.01
-#     )
-#     fig.tight_layout()
-#     fig.savefig(out_path, dpi=180, bbox_inches="tight")
-#     plt.close(fig)
-#     print(f"  [saved] {out_path}")
-#     return pd.DataFrame(summary_rows)
 
 
 # # ════════════════════════════════════════════════════════════════
 # # 7. TEST 4 — TRANSACTION COST ANALYSIS (period-specific costs)
 # # ════════════════════════════════════════════════════════════════
 
-# def transaction_cost_analysis(ret_pre, ret_post,
-#                                rf_pre, rf_post):
-#     mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
-#     mu_post, cov_post, _ = ledoit_wolf(ret_post)
+def transaction_cost_analysis(ret_pre, ret_post,
+                              rf_pre, rf_post):
 
-#     w_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
-#     w_post = max_sharpe(mu_post, cov_post, rf_post)
+    # Expected returns and covariance matrices
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
 
-#     r_pre,  v_pre  = pstats(w_pre,  mu_pre,  cov_pre)
-#     r_post, v_post = pstats(w_post, mu_post, cov_post)
+    # Tangency portfolios
+    w_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
+    w_post = max_sharpe(mu_post, cov_post, rf_post)
 
-#     sr_pre_gross  = (r_pre  - rf_pre)  / v_pre
-#     sr_post_gross = (r_post - rf_post) / v_post
+    # Portfolio statistics
+    r_pre,  v_pre  = pstats(w_pre,  mu_pre,  cov_pre)
+    r_post, v_post = pstats(w_post, mu_post, cov_post)
 
-#     turnover = float(np.sum(np.abs(w_post - w_pre)))
+    # Gross Sharpe ratios
+    sr_pre_gross  = (r_pre  - rf_pre)  / v_pre
+    sr_post_gross = (r_post - rf_post) / v_post
 
-#     cost_pre  = COSTS["pre"]["ROUND_TRIP"]
-#     cost_post = COSTS["post"]["ROUND_TRIP"]
+    # One-time portfolio migration turnover
+    turnover = 0.5 * float(
+        np.sum(np.abs(w_post - w_pre))
+    )
 
-#     rows = []
-#     for freq_label, rebal_per_year in [
-#         ("Annual",      1),
-#         ("Semi-annual", 2),
-#         ("Quarterly",   4),
-#         ("Monthly",    12),
-#     ]:
-#         drag_pre  = turnover * cost_pre  * rebal_per_year
-#         drag_post = turnover * cost_post * rebal_per_year
+    # Round-trip implementation costs
+    cost_pre  = COSTS["pre"]["ROUND_TRIP"]
+    cost_post = COSTS["post"]["ROUND_TRIP"]
 
-#         sr_pre_net  = (r_pre  - rf_pre  - drag_pre)  / v_pre
-#         sr_post_net = (r_post - rf_post - drag_post) / v_post
+    # One-time implementation drag
+    drag_pre  = turnover * cost_pre
+    drag_post = turnover * cost_post
 
-#         rows.append({
-#             "Rebalancing":          freq_label,
-#             "Cost pre (%)":         round(drag_pre  * 100, 3),
-#             "Cost post (%)":        round(drag_post * 100, 3),
-#             "SR pre (gross)":       round(sr_pre_gross,  3),
-#             "SR post (gross)":      round(sr_post_gross, 3),
-#             "SR pre (net)":         round(sr_pre_net,    3),
-#             "SR post (net)":        round(sr_post_net,   3),
-#             "Delta SR (net)":       round(sr_post_net - sr_pre_net, 3),
-#             "Improvement survives": bool(sr_post_net > sr_pre_net),
-#         })
+    # Net Sharpe ratios
+    sr_pre_net  = (
+        r_pre - rf_pre - drag_pre
+    ) / v_pre
 
-#     df = pd.DataFrame(rows)
+    sr_post_net = (
+        r_post - rf_post - drag_post
+    ) / v_post
 
-#     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
-#     fig.patch.set_facecolor("#FAFAFA")
+    # Summary table
+    df = pd.DataFrame([{
+        "Turnover (%)":
+            round(turnover * 100, 2),
 
-#     ax = axes[0]
-#     ax.set_facecolor("#FAFAFA")
-#     for sp in ["top", "right"]:
-#         ax.spines[sp].set_visible(False)
-#     for sp in ["left", "bottom"]:
-#         ax.spines[sp].set_color("#CCCCCC")
-#     ax.grid(True, linestyle="--", linewidth=0.4,
-#             color="#DDDDDD", alpha=0.8, axis="y")
+        "Pre cost drag (%)":
+            round(drag_pre * 100, 3),
 
-#     x     = np.arange(len(rows))
-#     width = 0.2
-#     labels = [r["Rebalancing"] for r in rows]
+        "Post cost drag (%)":
+            round(drag_post * 100, 3),
 
-#     ax.bar(x - 1.5*width,
-#            [r["SR pre (gross)"]  for r in rows],
-#            width, label="Pre gross",  color="#A8D8C8",
-#            alpha=0.9)
-#     ax.bar(x - 0.5*width,
-#            [r["SR pre (net)"]    for r in rows],
-#            width, label="Pre net",    color="#1D9E75",
-#            alpha=0.9)
-#     ax.bar(x + 0.5*width,
-#            [r["SR post (gross)"] for r in rows],
-#            width, label="Post gross", color="#C8C8F0",
-#            alpha=0.9)
-#     ax.bar(x + 1.5*width,
-#            [r["SR post (net)"]   for r in rows],
-#            width, label="Post net",   color="#534AB7",
-#            alpha=0.9)
+        "SR pre gross":
+            round(sr_pre_gross, 3),
 
-#     ax.set_xticks(x)
-#     ax.set_xticklabels(labels, fontsize=9.5)
-#     ax.set_ylabel("Sharpe Ratio", fontsize=10,
-#                   color="#555555")
-#     ax.set_title(
-#         "Gross vs Net Sharpe by Rebalancing Frequency\n"
-#         f"Pre round-trip: {cost_pre*100:.2f}%  |  "
-#         f"Post round-trip: {cost_post*100:.2f}%",
-#         fontsize=10, color="#222222"
-#     )
-#     ax.legend(fontsize=9, framealpha=0.7)
-#     ax.axhline(0, color="#888888", lw=0.8)
-#     ax.tick_params(colors="#666666", labelsize=9)
+        "SR post gross":
+            round(sr_post_gross, 3),
 
-#     ax2 = axes[1]
-#     ax2.set_facecolor("#FAFAFA")
-#     for sp in ["top", "right"]:
-#         ax2.spines[sp].set_visible(False)
-#     for sp in ["left", "bottom"]:
-#         ax2.spines[sp].set_color("#CCCCCC")
-#     ax2.grid(True, linestyle="--", linewidth=0.4,
-#              color="#DDDDDD", alpha=0.8, axis="y")
+        "SR pre net":
+            round(sr_pre_net, 3),
 
-#     width2 = 0.3
-#     ax2.bar(x - width2/2,
-#             [r["Cost pre (%)"]  for r in rows],
-#             width2, label="Pre-COVID cost",
-#             color="#E8A838", alpha=0.9)
-#     ax2.bar(x + width2/2,
-#             [r["Cost post (%)"] for r in rows],
-#             width2, label="Post-COVID cost",
-#             color="#534AB7", alpha=0.9)
-#     ax2.set_xticks(x)
-#     ax2.set_xticklabels(labels, fontsize=9.5)
-#     ax2.set_ylabel("Annual Cost Drag (%)", fontsize=10,
-#                    color="#555555")
-#     ax2.set_title(
-#         "Annual Cost Drag by Rebalancing Frequency\n"
-#         "Pre-COVID costs higher due to traditional brokers",
-#         fontsize=10, color="#222222"
-#     )
-#     ax2.legend(fontsize=9, framealpha=0.7)
-#     ax2.tick_params(colors="#666666", labelsize=9)
+        "SR post net":
+            round(sr_post_net, 3),
 
-#     fig.suptitle(
-#         f"Transaction Cost Analysis  |  "
-#         f"One-way turnover: {turnover*100:.1f}%  |  "
-#         f"STT + brokerage + impact (period-specific)",
-#         fontsize=11, fontweight="500",
-#         color="#222222", y=1.01
-#     )
-#     fig.tight_layout()
-#     out = "Results/Robustness/transaction_costs.png"
-#     fig.savefig(out, dpi=180, bbox_inches="tight")
-#     plt.close(fig)
-#     print(f"  [saved] {out}")
+        "Delta SR gross":
+            round(sr_post_gross - sr_pre_gross, 3),
 
-#     return df, turnover, cost_pre, cost_post
+        "Delta SR net":
+            round(sr_post_net - sr_pre_net, 3),
+
+        "Improvement survives":
+            bool(sr_post_net > sr_pre_net),
+    }])
+
+    return df
 
 
-# # ════════════════════════════════════════════════════════════════
-# # 8. TEST 5 — SECTOR WEIGHT CHECK
-# # ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
+# 8. TEST 5 — SECTOR WEIGHT CHECK
+# ════════════════════════════════════════════════════════════════
 
-# def sector_weight_check(ret_pre, ret_post, out_path, rf_pre, rf_post):
-#     tickers = list(ret_pre.columns)
+def sector_weight_check(ret_pre, ret_post, out_path, rf_pre, rf_post):
+    tickers = list(ret_pre.columns)
 
-#     sector_counts = {}
-#     for t in tickers:
-#         s = SECTOR_MAP.get(t, "Others")
-#         sector_counts[s] = sector_counts.get(s, 0) + 1
-#     total = len(tickers)
-#     universe_weights = {s: c / total
-#                         for s, c in sector_counts.items()}
+    sector_counts = {}
+    for t in tickers:
+        s = SECTOR_MAP.get(t, "Others")
+        sector_counts[s] = sector_counts.get(s, 0) + 1
+    total = len(tickers)
+    universe_weights = {s: c / total
+                        for s, c in sector_counts.items()}
 
-#     sectors = sorted(set(
-#         list(NIFTY50_SECTOR_WEIGHTS.keys()) +
-#         list(universe_weights.keys())
-#     ))
-#     nifty_w = [NIFTY50_SECTOR_WEIGHTS.get(s, 0) for s in sectors]
-#     univ_w  = [universe_weights.get(s, 0)        for s in sectors]
+    sectors = sorted(set(
+        list(NIFTY50_SECTOR_WEIGHTS.keys()) +
+        list(universe_weights.keys())
+    ))
+    nifty_w = [NIFTY50_SECTOR_WEIGHTS.get(s, 0) for s in sectors]
+    univ_w  = [universe_weights.get(s, 0)        for s in sectors]
 
-#     mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
-#     mu_post, cov_post, _ = ledoit_wolf(ret_post)
-#     w_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
-#     w_post = max_sharpe(mu_post, cov_post, rf_post)
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
+    w_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
+    w_post = max_sharpe(mu_post, cov_post, rf_post)
 
-#     def sector_weights_from_w(w, tickers):
-#         sw = {}
-#         for wi, t in zip(w, tickers):
-#             s = SECTOR_MAP.get(t, "Others")
-#             sw[s] = sw.get(s, 0) + wi
-#         return sw
+    def sector_weights_from_w(w, tickers):
+        sw = {}
+        for wi, t in zip(w, tickers):
+            s = SECTOR_MAP.get(t, "Others")
+            sw[s] = sw.get(s, 0) + wi
+        return sw
 
-#     sw_pre  = sector_weights_from_w(w_pre,  tickers)
-#     sw_post = sector_weights_from_w(w_post, tickers)
-#     tp_pre  = [sw_pre.get(s,  0) for s in sectors]
-#     tp_post = [sw_post.get(s, 0) for s in sectors]
+    sw_pre  = sector_weights_from_w(w_pre,  tickers)
+    sw_post = sector_weights_from_w(w_post, tickers)
+    tp_pre  = [sw_pre.get(s,  0) for s in sectors]
+    tp_post = [sw_post.get(s, 0) for s in sectors]
 
-#     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-#     fig.patch.set_facecolor("#FAFAFA")
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    fig.patch.set_facecolor("#FAFAFA")
 
-#     x     = np.arange(len(sectors))
-#     width = 0.35
+    x     = np.arange(len(sectors))
+    width = 0.35
 
-#     ax = axes[0]
-#     ax.set_facecolor("#FAFAFA")
-#     for sp in ["top", "right"]:
-#         ax.spines[sp].set_visible(False)
-#     for sp in ["left", "bottom"]:
-#         ax.spines[sp].set_color("#CCCCCC")
-#     ax.grid(True, linestyle="--", linewidth=0.4,
-#             color="#DDDDDD", alpha=0.8, axis="x")
+    ax = axes[0]
+    ax.set_facecolor("#FAFAFA")
+    for sp in ["top", "right"]:
+        ax.spines[sp].set_visible(False)
+    for sp in ["left", "bottom"]:
+        ax.spines[sp].set_color("#CCCCCC")
+    ax.grid(True, linestyle="--", linewidth=0.4,
+            color="#DDDDDD", alpha=0.8, axis="x")
 
-#     ax.barh(x - width/2, nifty_w, width,
-#             label="Actual Nifty 50",
-#             color="#E8A838", alpha=0.85)
-#     ax.barh(x + width/2, univ_w,  width,
-#             label="Study universe (equal-weight)",
-#             color="#534AB7", alpha=0.85)
-#     ax.set_yticks(x)
-#     ax.set_yticklabels(sectors, fontsize=9.5)
-#     ax.xaxis.set_major_formatter(
-#         plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
-#     ax.set_xlabel("Sector Weight", fontsize=10,
-#                   color="#555555")
-#     ax.set_title(
-#         "Universe vs Actual Nifty 50 Sector Weights\n"
-#         "Checks representativeness of stock selection",
-#         fontsize=10.5, color="#222222"
-#     )
-#     ax.legend(fontsize=9.5, framealpha=0.7)
-#     ax.tick_params(colors="#666666", labelsize=9)
+    ax.barh(x - width/2, nifty_w, width,
+            label="Actual Nifty 50",
+            color="#E8A838", alpha=0.85)
+    ax.barh(x + width/2, univ_w,  width,
+            label="Study universe (equal-weight)",
+            color="#534AB7", alpha=0.85)
+    ax.set_yticks(x)
+    ax.set_yticklabels(sectors, fontsize=9.5)
+    ax.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+    ax.set_xlabel("Sector Weight", fontsize=10,
+                  color="#555555")
+    ax.set_title(
+        "Universe vs Actual Nifty 50 Sector Weights\n"
+        "Checks representativeness of stock selection",
+        fontsize=10.5, color="#222222"
+    )
+    ax.legend(fontsize=9.5, framealpha=0.7)
+    ax.tick_params(colors="#666666", labelsize=9)
 
-#     ax2 = axes[1]
-#     ax2.set_facecolor("#FAFAFA")
-#     for sp in ["top", "right"]:
-#         ax2.spines[sp].set_visible(False)
-#     for sp in ["left", "bottom"]:
-#         ax2.spines[sp].set_color("#CCCCCC")
-#     ax2.grid(True, linestyle="--", linewidth=0.4,
-#              color="#DDDDDD", alpha=0.8, axis="x")
+    ax2 = axes[1]
+    ax2.set_facecolor("#FAFAFA")
+    for sp in ["top", "right"]:
+        ax2.spines[sp].set_visible(False)
+    for sp in ["left", "bottom"]:
+        ax2.spines[sp].set_color("#CCCCCC")
+    ax2.grid(True, linestyle="--", linewidth=0.4,
+             color="#DDDDDD", alpha=0.8, axis="x")
 
-#     ax2.barh(x - width/2, tp_pre,  width,
-#              label="Pre-COVID tangency",
-#              color="#1D9E75", alpha=0.85)
-#     ax2.barh(x + width/2, tp_post, width,
-#              label="Post-COVID tangency",
-#              color="#534AB7", alpha=0.85)
-#     ax2.set_yticks(x)
-#     ax2.set_yticklabels(sectors, fontsize=9.5)
-#     ax2.xaxis.set_major_formatter(
-#         plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
-#     ax2.set_xlabel("Portfolio Weight", fontsize=10,
-#                    color="#555555")
-#     ax2.set_title(
-#         "Tangency Portfolio Sector Weights\n"
-#         "Pre-COVID vs Post-COVID rotation",
-#         fontsize=10.5, color="#222222"
-#     )
-#     ax2.legend(fontsize=9.5, framealpha=0.7)
-#     ax2.tick_params(colors="#666666", labelsize=9)
+    ax2.barh(x - width/2, tp_pre,  width,
+             label="Pre-COVID tangency",
+             color="#1D9E75", alpha=0.85)
+    ax2.barh(x + width/2, tp_post, width,
+             label="Post-COVID tangency",
+             color="#534AB7", alpha=0.85)
+    ax2.set_yticks(x)
+    ax2.set_yticklabels(sectors, fontsize=9.5)
+    ax2.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+    ax2.set_xlabel("Portfolio Weight", fontsize=10,
+                   color="#555555")
+    ax2.set_title(
+        "Tangency Portfolio Sector Weights\n"
+        "Pre-COVID vs Post-COVID rotation",
+        fontsize=10.5, color="#222222"
+    )
+    ax2.legend(fontsize=9.5, framealpha=0.7)
+    ax2.tick_params(colors="#666666", labelsize=9)
 
-#     fig.suptitle(
-#         "Sector Composition Analysis",
-#         fontsize=12, fontweight="500",
-#         color="#222222", y=1.01
-#     )
-#     fig.tight_layout()
-#     fig.savefig(out_path, dpi=180, bbox_inches="tight")
-#     plt.close(fig)
-#     print(f"  [saved] {out_path}")
+    fig.suptitle(
+        "Sector Composition Analysis",
+        fontsize=12, fontweight="500",
+        color="#222222", y=1.01
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {out_path}")
 
-#     return pd.DataFrame({
-#         "Sector":      sectors,
-#         "Nifty50_wt":  nifty_w,
-#         "Universe_wt": univ_w,
-#         "TP_pre_wt":   tp_pre,
-#         "TP_post_wt":  tp_post,
-#     })
+    return pd.DataFrame({
+        "Sector":      sectors,
+        "Nifty50_wt":  nifty_w,
+        "Universe_wt": univ_w,
+        "TP_pre_wt":   tp_pre,
+        "TP_post_wt":  tp_post,
+    })
 
 
-# # ════════════════════════════════════════════════════════════════
-# # 9. TEST 6 — BANKING SUB-SECTOR DECOMPOSITION
-# # ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
+# 9. FRONTIER SHIFT DECOMPOSITION (μ vs Σ)
+# ════════════════════════════════════════════════════════════════
 
-# def banking_decomposition(ret_pre, ret_post, out_path):
-#     def get_available(tickers, ret):
-#         return [t for t in tickers if t in ret.columns]
+def plot_frontier_decomposition(ret_pre, ret_post, rf_pre, rf_post,
+                                out_path=None):
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
 
-#     retail_pre  = get_available(RETAIL_BANKS,    ret_pre)
-#     retail_post = get_available(RETAIL_BANKS,    ret_post)
-#     whole_pre   = get_available(WHOLESALE_BANKS, ret_pre)
-#     whole_post  = get_available(WHOLESALE_BANKS, ret_post)
+    scenarios = {
+        "Pre-COVID (μ_pre, Σ_pre)":       (mu_pre,  cov_pre,  rf_pre),
+        "Only μ updated (μ_post, Σ_pre)": (mu_post, cov_pre,  rf_pre),
+        "Only Σ updated (μ_pre, Σ_post)": (mu_pre,  cov_post, rf_post),
+        "Post-COVID (μ_post, Σ_post)":    (mu_post, cov_post, rf_post),
+    }
+    colors = ["#1D9E75", "#E0A020", "#9B59B6", "#534AB7"]
 
-#     def ann_ret(ret, tickers):
-#         if not tickers:
-#             return {}
-#         return (ret[tickers].mean() * 252).to_dict()
+    fig, ax = plt.subplots(figsize=(12, 7))
+    fig.patch.set_facecolor("#FAFAFA")
+    style_ax(ax)
 
-#     rr_pre  = ann_ret(ret_pre,  retail_pre)
-#     rr_post = ann_ret(ret_post, retail_post)
-#     rw_pre  = ann_ret(ret_pre,  whole_pre)
-#     rw_post = ann_ret(ret_post, whole_post)
+    srs, vols_tp, rets_tp = [], [], []
+    for (label, (mu, cov, rf)), color in zip(scenarios.items(), colors):
+        v, r = frontier_points(mu, cov, n_pts=150)
+        w_tp = max_sharpe(mu, cov, rf)
+        r_tp, v_tp = pstats(w_tp, mu, cov)
+        sr = (r_tp - rf) / v_tp
+        srs.append(sr); vols_tp.append(v_tp); rets_tp.append(r_tp)
+        ax.plot(v, r, color=color, lw=2.2, label=f"{label}  (SR={sr:.2f})")
+        ax.scatter(v_tp, r_tp, color=color, s=120, zorder=6,
+                   marker="*", edgecolors="white", linewidths=0.5)
 
-#     all_banks = list(set(retail_pre + whole_pre))
-#     bank_pre  = {t: ret_pre[t].mean()  * 252
-#                  for t in all_banks if t in ret_pre.columns}
-#     bank_post = {t: ret_post[t].mean() * 252
-#                  for t in all_banks if t in ret_post.columns}
-#     common    = [t for t in all_banks
-#                  if t in bank_pre and t in bank_post]
-#     labels    = [t.replace(".NS", "") for t in common]
+    ax.annotate("", xy=(vols_tp[1], rets_tp[1]), xytext=(vols_tp[0], rets_tp[0]),
+                arrowprops=dict(arrowstyle="->", color="#E0A020", lw=1.5))
+    ax.annotate("", xy=(vols_tp[2], rets_tp[2]), xytext=(vols_tp[0], rets_tp[0]),
+                arrowprops=dict(arrowstyle="->", color="#9B59B6", lw=1.5))
 
-#     pre_vals  = [bank_pre[t]  for t in common]
-#     post_vals = [bank_post[t] for t in common]
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
+    ax.set_xlabel("Annualised Volatility (σ)", fontsize=11, color="#555555")
+    ax.set_ylabel("Annualised Return (μ)", fontsize=11, color="#555555")
+    ax.set_title(
+        "Frontier Shift Decomposition — Which input drives the shift?\n"
+        "Stars = tangency  |  Yellow arrow = μ effect  |  Purple arrow = Σ effect",
+        fontsize=11, color="#222222", pad=10)
+    ax.legend(fontsize=9.5, framealpha=0.7, loc="upper left")
 
-#     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-#     fig.patch.set_facecolor("#FAFAFA")
+    sr_text = (f"Sharpe Ratios:\n"
+               f"Pre (μ_pre, Σ_pre):     {srs[0]:.3f}\n"
+               f"μ only (μ_post, Σ_pre): {srs[1]:.3f}\n"
+               f"Σ only (μ_pre, Σ_post): {srs[2]:.3f}\n"
+               f"Post (μ_post, Σ_post):  {srs[3]:.3f}")
+    ax.text(0.98, 0.04, sr_text, transform=ax.transAxes,
+            fontsize=9, va="bottom", ha="right",
+            bbox=dict(facecolor="white", alpha=0.85,
+                      edgecolor="#CCCCCC", boxstyle="round,pad=0.4"),
+            fontfamily="monospace")
 
-#     ax = axes[0]
-#     ax.set_facecolor("#FAFAFA")
-#     for sp in ["top", "right"]:
-#         ax.spines[sp].set_visible(False)
-#     for sp in ["left", "bottom"]:
-#         ax.spines[sp].set_color("#CCCCCC")
-#     ax.grid(True, linestyle="--", linewidth=0.4,
-#             color="#DDDDDD", alpha=0.8, axis="x")
+    fig.tight_layout()
+    out = out_path or "Results/Robustness/frontier_decomposition.png"
+    fig.savefig(out, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {out}")
 
-#     x     = np.arange(len(labels))
-#     width = 0.35
-#     ax.barh(x - width/2, pre_vals,  width,
-#             label="Pre-COVID",  color="#1D9E75", alpha=0.85)
-#     ax.barh(x + width/2, post_vals, width,
-#             label="Post-COVID", color="#534AB7", alpha=0.85)
-#     ax.set_yticks(x)
-#     ax.set_yticklabels(labels, fontsize=10)
-#     ax.xaxis.set_major_formatter(
-#         plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
-#     ax.axvline(0, color="#888888", lw=0.8)
-#     ax.set_xlabel("Annualised Return", fontsize=10,
-#                   color="#555555")
-#     ax.set_title(
-#         "Individual Bank Returns: Pre vs Post\n"
-#         "Red label = Retail  |  Amber label = Wholesale",
-#         fontsize=10.5, color="#222222"
-#     )
-#     ax.legend(fontsize=9.5, framealpha=0.7)
-#     ax.tick_params(colors="#666666", labelsize=9)
+    return {
+        "mu_effect_sr":    round(srs[1] - srs[0], 4),
+        "sigma_effect_sr": round(srs[2] - srs[0], 4),
+        "total_sr_gain":   round(srs[3] - srs[0], 4),
+    }
 
-#     for i, t in enumerate(common):
-#         subtype = ("Retail"    if t in RETAIL_BANKS
-#                    else "Wholesale")
-#         col     = ("#C0392B"   if t in RETAIL_BANKS
-#                    else "#854F0B")
-#         ax.text(-0.005, i, subtype,
-#                 ha="right", va="center",
-#                 fontsize=7.5, color=col,
-#                 fontweight="500")
 
-#     ax2 = axes[1]
-#     ax2.set_facecolor("#FAFAFA")
-#     for sp in ["top", "right"]:
-#         ax2.spines[sp].set_visible(False)
-#     for sp in ["left", "bottom"]:
-#         ax2.spines[sp].set_color("#CCCCCC")
-#     ax2.grid(True, linestyle="--", linewidth=0.4,
-#              color="#DDDDDD", alpha=0.8, axis="y")
+# ════════════════════════════════════════════════════════════════
+# 10. VAR / CVAR ANALYSIS
+# ════════════════════════════════════════════════════════════════
 
-#     avg_retail_pre   = (np.mean([rr_pre.get(t, 0)
-#                                  for t in retail_pre])
-#                         if retail_pre else 0)
-#     avg_retail_post  = (np.mean([rr_post.get(t, 0)
-#                                  for t in retail_post])
-#                         if retail_post else 0)
-#     avg_whole_pre    = (np.mean([rw_pre.get(t, 0)
-#                                  for t in whole_pre])
-#                         if whole_pre else 0)
-#     avg_whole_post   = (np.mean([rw_post.get(t, 0)
-#                                  for t in whole_post])
-#                         if whole_post else 0)
+def var_cvar_analysis(ret_pre, ret_post, rf_pre, rf_post, N=100_000):
+    """
+    Student-t Monte Carlo VaR and CVaR at 95% and 99%.
 
-#     sub_labels = [
-#         "Retail Banks\n(HDFC, Kotak, Axis,\nICICI, SBI)",
-#         "Wholesale Banks\n(PNB, BoB, IndusInd)"
-#     ]
-#     x2    = np.arange(2)
-#     w2    = 0.3
-#     ax2.bar(x2 - w2/2,
-#             [avg_retail_pre,  avg_whole_pre],
-#             w2, label="Pre-COVID",
-#             color="#1D9E75", alpha=0.85)
-#     ax2.bar(x2 + w2/2,
-#             [avg_retail_post, avg_whole_post],
-#             w2, label="Post-COVID",
-#             color="#534AB7", alpha=0.85)
-#     ax2.set_xticks(x2)
-#     ax2.set_xticklabels(sub_labels, fontsize=10)
-#     ax2.yaxis.set_major_formatter(
-#         plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
-#     ax2.axhline(0, color="#888888", lw=0.8)
-#     ax2.set_ylabel("Average Annualised Return",
-#                    fontsize=10, color="#555555")
-#     ax2.set_title(
-#         "Average Return by Banking Sub-sector\n"
-#         "Retail vs Wholesale banks",
-#         fontsize=10.5, color="#222222"
-#     )
-#     ax2.legend(fontsize=9.5, framealpha=0.7)
-#     ax2.tick_params(colors="#666666", labelsize=9)
+    For each portfolio:
+      - Fit a univariate Student-t (MLE) to the daily return series
+      - Simulate N=100,000 daily returns from the fitted distribution
+      - Read off VaR and CVaR at 95% and 99% from the simulation
+      - Annualise via sqrt-of-time scaling (×√252)
 
-#     fig.suptitle(
-#         "Banking Sector Decomposition: "
-#         "Retail vs Wholesale Banks",
-#         fontsize=12, fontweight="500",
-#         color="#222222", y=1.01
-#     )
-#     fig.tight_layout()
-#     fig.savefig(out_path, dpi=180, bbox_inches="tight")
-#     plt.close(fig)
-#     print(f"  [saved] {out_path}")
+    The fitted degrees-of-freedom (t_df) column shows tail fatness;
+    lower df → fatter tails → more extreme losses than Gaussian.
 
-#     return {
-#         "avg_retail_pre":    float(avg_retail_pre),
-#         "avg_retail_post":   float(avg_retail_post),
-#         "avg_wholesale_pre": float(avg_whole_pre),
-#         "avg_wholesale_post":float(avg_whole_post),
-#     }
+    Saves Results/Robustness/var_cvar.csv and returns the DataFrame.
+    """
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
+    w_tp_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
+    w_tp_post = max_sharpe(mu_post, cov_post, rf_post)
+
+    strategies = [
+        ("Pre TP",  (ret_pre  * w_tp_pre).sum(axis=1)),
+        ("Post TP", (ret_post * w_tp_post).sum(axis=1)),
+    ]
+
+    rows = []
+    for name, r in strategies:
+        r = r.dropna().values
+        seed = 42 if "Pre" in name else 123
+
+        var95,  cvar95,  df95  = _student_t_var_cvar(r, 0.95, N=N, seed=seed)
+        var99,  cvar99,  _     = _student_t_var_cvar(r, 0.99, N=N, seed=seed)
+
+        rows.append({
+            "Strategy":          name,
+            "t_df (tail fit)":   round(df95, 3),
+            "VaR 95% (daily)":   round(var95,  6),
+            "CVaR 95% (daily)":  round(cvar95, 6),
+            "VaR 99% (daily)":   round(var99,  6),
+            "CVaR 99% (daily)":  round(cvar99, 6),
+            "VaR 95% (ann)":     round(var95  * np.sqrt(252), 5),
+            "CVaR 95% (ann)":    round(cvar95 * np.sqrt(252), 5),
+            "VaR 99% (ann)":     round(var99  * np.sqrt(252), 5),
+            "CVaR 99% (ann)":    round(cvar99 * np.sqrt(252), 5),
+        })
+
+    df = pd.DataFrame(rows)
+    df.to_csv("Results/Robustness/var_cvar.csv", index=False)
+    print(f"  [saved] Results/Robustness/var_cvar.csv")
+    return df
+
+
+def plot_monte_carlo_trials(ret_pre, ret_post, rf_pre, rf_post,
+                            N=100_000, out_path=None):
+    """
+    Visualise Student-t Monte Carlo simulations underlying the VaR/CVaR analysis.
+
+    Each panel shows:
+      - Histogram of N simulated daily returns (fitted Student-t draws)
+      - Fitted Student-t PDF overlaid
+      - Vertical lines for VaR and CVaR at 95% and 99%
+      - Left tail shaded for each risk level
+    """
+    PRE_C  = "#1D9E75"
+    POST_C = "#534AB7"
+
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
+    w_tp_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
+    w_tp_post = max_sharpe(mu_post, cov_post, rf_post)
+
+    strategies = [
+        ("Pre-COVID TP",  (ret_pre  * w_tp_pre).sum(axis=1).dropna().values,  PRE_C,  42),
+        ("Post-COVID TP", (ret_post * w_tp_post).sum(axis=1).dropna().values, POST_C, 123),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=False)
+    fig.patch.set_facecolor("#FAFAFA")
+
+    for ax, (name, r, color, seed) in zip(axes, strategies):
+        df_t, loc, scale = stats.t.fit(r)
+        sim = stats.t.rvs(df_t, loc=loc, scale=scale, size=N, random_state=seed)
+
+        var95  = float(-np.percentile(sim, 5))
+        cvar95 = float(-sim[sim <= -var95].mean())
+        var99  = float(-np.percentile(sim, 1))
+        cvar99 = float(-sim[sim <= -var99].mean())
+
+        style_ax(ax)
+
+        # histogram of simulated draws
+        counts, bins, _ = ax.hist(
+            sim, bins=120, density=True,
+            color=color, alpha=0.30, zorder=2
+        )
+
+        # fitted Student-t PDF
+        x_pdf = np.linspace(sim.min(), sim.max(), 800)
+        ax.plot(x_pdf, stats.t.pdf(x_pdf, df_t, loc, scale),
+                color=color, lw=2.2, zorder=4, label=f"Fitted t (df={df_t:.1f})")
+
+        # shade 99% tail
+        x_tail99 = np.linspace(sim.min(), -var99, 300)
+        ax.fill_between(x_tail99,
+                        stats.t.pdf(x_tail99, df_t, loc, scale),
+                        alpha=0.55, color="#E74C3C", zorder=3,
+                        label=f"99% tail  VaR={var99:.3%}  CVaR={cvar99:.3%}")
+
+        # shade 95% tail (lighter, on top of 99% shade)
+        x_tail95 = np.linspace(-var99, -var95, 300)
+        ax.fill_between(x_tail95,
+                        stats.t.pdf(x_tail95, df_t, loc, scale),
+                        alpha=0.35, color="#E67E22", zorder=3,
+                        label=f"95% tail  VaR={var95:.3%}  CVaR={cvar95:.3%}")
+
+        # VaR lines
+        ax.axvline(-var95,  color="#E67E22", lw=1.6, ls="--", zorder=5)
+        ax.axvline(-var99,  color="#E74C3C", lw=1.6, ls="--", zorder=5)
+
+        # CVaR lines
+        ax.axvline(-cvar95, color="#E67E22", lw=1.4, ls=":",  zorder=5)
+        ax.axvline(-cvar99, color="#E74C3C", lw=1.4, ls=":",  zorder=5)
+
+        # annotation box
+        ann = (f"VaR  95%: {var95:.3%}\n"
+               f"CVaR 95%: {cvar95:.3%}\n"
+               f"VaR  99%: {var99:.3%}\n"
+               f"CVaR 99%: {cvar99:.3%}")
+        ax.text(0.97, 0.97, ann, transform=ax.transAxes,
+                fontsize=8.5, va="top", ha="right",
+                bbox=dict(facecolor="white", alpha=0.88,
+                          edgecolor="#CCCCCC", boxstyle="round,pad=0.4"),
+                fontfamily="monospace")
+
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.1%}"))
+        ax.set_xlabel("Daily Return", fontsize=10, color="#555555")
+        ax.set_ylabel("Probability Density", fontsize=10, color="#555555")
+        ax.set_title(f"{name}\nN = {N:,} Monte Carlo draws  |  Student-t fit",
+                     fontsize=10.5, color="#222222")
+        ax.legend(fontsize=8.5, framealpha=0.8, loc="upper left")
+
+    fig.suptitle(
+        "Monte Carlo VaR / CVaR — Simulated Daily Return Distributions\n"
+        "Dashed = VaR  |  Dotted = CVaR  |  Orange = 95% tail  |  Red = 99% tail",
+        fontsize=11.5, color="#222222", y=1.02
+    )
+    fig.tight_layout()
+    out = out_path or "Results/Robustness/monte_carlo_var_cvar.png"
+    fig.savefig(out, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {out}")
+
+
+def plot_monte_carlo_paths(ret_pre, ret_post, rf_pre, rf_post,
+                           n_paths=1000, horizon=252, out_path=None):
+    """
+    Fan chart of simulated cumulative return paths (1-year horizon).
+
+    Method:
+      1. Fit Student-t to each tangency portfolio's daily return series.
+      2. Simulate n_paths × horizon daily draws from the fitted distribution.
+      3. Compound into cumulative return paths (starting at 1.0).
+      4. Plot individual paths (thin, low alpha) + percentile fan bands
+         (5/25/50/75/95th) to form the cone of uncertainty.
+
+    Both periods are overlaid on one chart so the shift in the
+    distribution of outcomes is immediately visible.
+    """
+    PRE_C  = "#1D9E75"
+    POST_C = "#534AB7"
+
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
+    w_tp_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
+    w_tp_post = max_sharpe(mu_post, cov_post, rf_post)
+
+    strategies = [
+        ("Pre-COVID TP",  (ret_pre  * w_tp_pre).sum(axis=1).dropna().values,  PRE_C,  42),
+        ("Post-COVID TP", (ret_post * w_tp_post).sum(axis=1).dropna().values, POST_C, 123),
+    ]
+
+    PCTILES = [5, 25, 50, 75, 95]
+    days    = np.arange(horizon + 1)
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7), sharey=False)
+    fig.patch.set_facecolor("#FAFAFA")
+
+    all_bands = {}   # store for overlay reference
+    for ax, (name, r, color, seed) in zip(axes, strategies):
+        style_ax(ax)
+        np.random.seed(seed)
+
+        df_t, loc, scale = stats.t.fit(r)
+        # (n_paths, horizon) matrix of daily draws
+        draws = stats.t.rvs(df_t, loc=loc, scale=scale,
+                            size=(n_paths, horizon),
+                            random_state=seed)
+
+        # cumulative return paths: shape (n_paths, horizon+1), starts at 1
+        cum = np.ones((n_paths, horizon + 1))
+        cum[:, 1:] = np.exp(np.cumsum(draws, axis=1))
+
+        # individual paths (thin, transparent)
+        n_show = min(300, n_paths)
+        for i in range(n_show):
+            ax.plot(days, cum[i], color=color, lw=0.4, alpha=0.04, zorder=2)
+
+        # percentile bands
+        bands = np.percentile(cum, PCTILES, axis=0)   # (5, horizon+1)
+        all_bands[name] = bands
+
+        alphas = [0.18, 0.28, 0.00, 0.28, 0.18]
+        labels = ["5–25%", None, None, "75–95%", None]
+        for i in range(len(PCTILES) - 1):
+            ax.fill_between(days, bands[i], bands[i + 1],
+                            alpha=alphas[i], color=color, zorder=3)
+
+        # median path
+        ax.plot(days, bands[2], color=color, lw=2.5,
+                zorder=5, label="Median path")
+        # 5th / 95th boundary lines
+        ax.plot(days, bands[0], color=color, lw=1.1, ls="--",
+                alpha=0.7, zorder=4, label="5th / 95th pctile")
+        ax.plot(days, bands[4], color=color, lw=1.1, ls="--",
+                alpha=0.7, zorder=4)
+
+        ax.axhline(1.0, color="#AAAAAA", lw=0.9, ls=":", zorder=1)
+
+        # terminal stats box
+        terminal = cum[:, -1]
+        med_fin  = np.median(terminal)
+        p5_fin   = np.percentile(terminal, 5)
+        p95_fin  = np.percentile(terminal, 95)
+        prob_pos = (terminal > 1.0).mean()
+        ann = (f"After {horizon} days:\n"
+               f"Median:  {med_fin:.3f}×\n"
+               f"P5–P95:  {p5_fin:.3f}× – {p95_fin:.3f}×\n"
+               f"P(gain): {prob_pos:.1%}")
+        ax.text(0.97, 0.05, ann, transform=ax.transAxes,
+                fontsize=9, va="bottom", ha="right",
+                bbox=dict(facecolor="white", alpha=0.88,
+                          edgecolor="#CCCCCC", boxstyle="round,pad=0.4"),
+                fontfamily="monospace")
+
+        ax.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda y, _: f"{y:.2f}×"))
+        ax.set_xlabel("Trading Days Forward", fontsize=10, color="#555555")
+        ax.set_ylabel("Cumulative Return (start = 1.0)", fontsize=10, color="#555555")
+        ax.set_title(
+            f"{name}  |  Student-t fit (df = {df_t:.1f})\n"
+            f"N = {n_paths:,} paths  ·  {horizon}-day horizon",
+            fontsize=10.5, color="#222222")
+        ax.legend(fontsize=9, framealpha=0.8, loc="upper left")
+
+    fig.suptitle(
+        "Monte Carlo Return Path Fan Chart — Cone of Uncertainty\n"
+        "Shaded bands = 5–95th and 25–75th percentiles  |  Dashed = 5th / 95th",
+        fontsize=11.5, color="#222222", y=1.02
+    )
+    fig.tight_layout()
+    out = out_path or "Results/Robustness/monte_carlo_paths.png"
+    fig.savefig(out, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {out}")
+
+
+# ════════════════════════════════════════════════════════════════
+# INDIVIDUAL STOCK RETURN TESTS
+# ════════════════════════════════════════════════════════════════
+
+def individual_stock_return_tests(ret_pre, ret_post, alpha=0.05, out_path=None):
+    """
+    Welch's two-sample t-test on daily log returns for each stock.
+    H0: mu_pre == mu_post  (two-sided)
+    Multiple testing corrected via Benjamini-Hochberg FDR.
+
+    Returns the full results DataFrame (one row per ticker).
+    """
+    rows = []
+    for t in ret_pre.columns:
+        r_pre  = ret_pre[t].dropna().values
+        r_post = ret_post[t].dropna().values
+        t_stat, p_val = stats.ttest_ind(r_pre, r_post, equal_var=False)
+        rows.append({
+            "Ticker":   t,
+            "Sector":   SECTOR_MAP.get(t, "Others"),
+            "mu_pre":   r_pre.mean()  * 252,
+            "mu_post":  r_post.mean() * 252,
+            "delta_mu": (r_post.mean() - r_pre.mean()) * 252,
+            "t_stat":   round(float(t_stat), 3),
+            "p_raw":    round(float(p_val),  4),
+        })
+
+    df = pd.DataFrame(rows)
+
+    # Benjamini-Hochberg FDR correction
+    n     = len(df)
+    order = np.argsort(df["p_raw"].values)
+    ranked_p  = df["p_raw"].values[order]
+    bh_thresh = (np.arange(1, n + 1) / n) * alpha
+    below   = ranked_p <= bh_thresh
+    reject  = np.zeros(n, dtype=bool)
+    if below.any():
+        reject[order[:int(np.where(below)[0].max()) + 1]] = True
+    df["sig_BH"] = reject
+
+    df = df.sort_values("delta_mu").reset_index(drop=True)
+
+    # ── plot ────────────────────────────────────────────────────
+    n_tickers = len(df)
+    fig, ax   = plt.subplots(figsize=(11, max(8, n_tickers * 0.30)))
+    fig.patch.set_facecolor("#FAFAFA")
+    style_ax(ax)
+
+    bar_colors = [
+        ("#1D9E75" if row["delta_mu"] > 0 else "#E74C3C") if row["sig_BH"]
+        else "#CCCCCC"
+        for _, row in df.iterrows()
+    ]
+
+    ax.barh(df["Ticker"], df["delta_mu"] * 100,
+            color=bar_colors, alpha=0.85,
+            edgecolor="white", linewidth=0.5)
+    ax.axvline(0, color="#555555", lw=0.9, zorder=5)
+
+    # sector labels pinned to the right margin
+    x_max = df["delta_mu"].abs().max() * 100
+    for i, (_, row) in enumerate(df.iterrows()):
+        ax.text(x_max * 1.08, i, row["Sector"],
+                va="center", ha="left", fontsize=7, color="#999999")
+
+    from matplotlib.patches import Patch
+    ax.legend(handles=[
+        Patch(facecolor="#1D9E75", alpha=0.85, label="Sig. increase  (BH FDR 5%)"),
+        Patch(facecolor="#E74C3C", alpha=0.85, label="Sig. decrease  (BH FDR 5%)"),
+        Patch(facecolor="#CCCCCC", alpha=0.85, label="Not significant"),
+    ], fontsize=9, framealpha=0.8, loc="lower right")
+
+    ax.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda x, _: f"{x:.0f} pp"))
+    ax.set_xlabel(
+        "Δ Annualised Mean Return  (Post − Pre, percentage points)",
+        fontsize=10, color="#555555")
+    sig_n = int(df["sig_BH"].sum())
+    ax.set_title(
+        f"Individual Stock Return Tests: Pre vs Post-COVID\n"
+        f"Welch's t-test  |  Benjamini-Hochberg FDR  |  "
+        f"{sig_n} / {n_tickers} stocks significant at {alpha:.0%}",
+        fontsize=11, color="#222222", pad=10)
+    ax.tick_params(axis="y", labelsize=8)
+
+    fig.tight_layout()
+    out = out_path or "Results/Robustness/stock_return_tests.png"
+    fig.savefig(out, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {out}")
+
+    sig = df[df["sig_BH"]].copy()
+    sig["delta_mu_pct"] = (sig["delta_mu"] * 100).round(1)
+    print(f"  Significant stocks (BH FDR 5%): {sig_n}")
+    if sig_n:
+        print(sig[["Ticker", "Sector", "delta_mu_pct", "t_stat", "p_raw"]].to_string(index=False))
+
+    return df
+
+
+# ════════════════════════════════════════════════════════════════
+# 11. HHI CONCENTRATION ANALYSIS
+# ════════════════════════════════════════════════════════════════
+
+def plot_hhi_concentration(ret_pre, ret_post, rf_pre, rf_post,
+                           out_path=None):
+    mu_pre,  cov_pre,  _ = ledoit_wolf(ret_pre)
+    mu_post, cov_post, _ = ledoit_wolf(ret_post)
+
+    w_tp_pre  = max_sharpe(mu_pre,  cov_pre,  rf_pre)
+    w_tp_post = max_sharpe(mu_post, cov_post, rf_post)
+    w_mv_pre  = min_var(mu_pre,  cov_pre)
+    w_mv_post = min_var(mu_post, cov_post)
+    w_ew      = np.ones(len(mu_pre)) / len(mu_pre)
+
+    portfolios = {
+        "Pre TP":   w_tp_pre,  "Post TP":  w_tp_post,
+        "Pre GMV":  w_mv_pre,  "Post GMV": w_mv_post,
+        "1/N":      w_ew,
+    }
+    hhi_vals = {k: hhi(v) for k, v in portfolios.items()}
+    eff_n    = {k: 1 / v for k, v in hhi_vals.items()}
+
+    colors_bar = ["#1D9E75", "#534AB7", "#1D9E75", "#534AB7", "#888888"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+    fig.patch.set_facecolor("#FAFAFA")
+
+    for ax, data, ylabel, title in zip(
+        axes,
+        [hhi_vals, eff_n],
+        ["HHI (0 = perfectly diversified, 1 = single stock)",
+         "Effective N = 1/HHI (# equivalent equal positions)"],
+        ["Herfindahl-Hirschman Index (Concentration)",
+         "Effective Number of Stocks (Diversification)"]
+    ):
+        style_ax(ax)
+        bars = ax.bar(list(data.keys()), list(data.values()),
+                      color=colors_bar, alpha=0.85,
+                      edgecolor="white", linewidth=1.2)
+        for bar, val in zip(bars, data.values()):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.005 * max(data.values()),
+                    f"{val:.2f}", ha="center", fontsize=10,
+                    fontweight="bold", color="#333333")
+        ax.set_title(title, fontsize=11, color="#222222", pad=8)
+        ax.set_ylabel(ylabel, fontsize=9.5)
+        ax.set_xlabel("Portfolio", fontsize=9.5)
+        ax.tick_params(rotation=15)
+
+    fig.suptitle(
+        "Portfolio Concentration Analysis\n"
+        "Pre vs Post-COVID tangency concentration (HHI)",
+        fontsize=12, fontweight="500", color="#222222", y=1.03)
+    fig.tight_layout()
+    out = out_path or "Results/Robustness/hhi_concentration.png"
+    fig.savefig(out, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {out}")
+    return hhi_vals
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1255,41 +1453,68 @@ def main():
     # print("  Estimator SR summary:")
     # print(est_df.to_string(index=False))
 
-    # # ── Test 4: Transaction costs ─────────────────
-    # print("\n── Test 4: Transaction cost analysis ──")
-    # tc_df, turnover, cost_pre, cost_post = \
-    #     transaction_cost_analysis(
-    #         ret_pre, ret_post, RF_PRE, RF_POST
-    #     )
-    # tc_df.to_csv(
-    #     "Results/Robustness/transaction_costs.csv",
-    #     index=False
-    # )
-    # print(f"  One-way turnover:   {turnover*100:.1f}%")
-    # print(f"  Pre round-trip:     {cost_pre*100:.2f}%")
-    # print(f"  Post round-trip:    {cost_post*100:.2f}%")
+    # ── Test 4: Transaction costs ─────────────────
+    print("\n── Test 4: Transaction cost analysis ──")
+    tc_df = transaction_cost_analysis(ret_pre, ret_post, RF_PRE, RF_POST)
+    tc_df.to_csv("Results/Robustness/transaction_costs.csv", index=False)
+    print(tc_df.to_string(index=False))
 
-    # # ── Test 5: Sector weight check ───────────────
-    # print("\n── Test 5: Sector weight check ──")
-    # sector_df = sector_weight_check(
-    #     ret_pre, ret_post,
-    #     out_path="Results/Robustness/sector_weights.png",
-    #     rf_pre=RF_PRE, rf_post=RF_POST
-    # )
-    # sector_df.to_csv(
-    #     "Results/Robustness/sector_weights.csv",
-    #     index=False
-    # )
+    # ── Test 5: Sector weight check ───────────────
+    print("\n── Test 5: Sector weight check ──")
+    sector_df = sector_weight_check(
+        ret_pre, ret_post,
+        out_path="Results/Robustness/sector_weights.png",
+        rf_pre=RF_PRE, rf_post=RF_POST
+    )
+    sector_df.to_csv("Results/Robustness/sector_weights.csv", index=False)
+    print(sector_df.to_string(index=False))
 
-    # # ── Test 6: Banking decomposition ────────────
-    # print("\n── Test 6: Banking sub-sector decomposition ──")
-    # banking = banking_decomposition(
-    #     ret_pre, ret_post,
-    #     out_path="Results/Robustness/banking_decomposition.png"
-    # )
+    # ── Frontier decomposition ────────────────────
+    print("\n── Frontier Shift Decomposition (μ vs Σ) ──")
+    decomp = plot_frontier_decomposition(
+        ret_pre, ret_post, RF_PRE, RF_POST,
+        out_path="Results/Robustness/frontier_decomposition.png"
+    )
+    print(f"  μ-only SR gain:  {decomp['mu_effect_sr']:+.4f}")
+    print(f"  Σ-only SR gain:  {decomp['sigma_effect_sr']:+.4f}")
+    print(f"  Total SR gain:   {decomp['total_sr_gain']:+.4f}")
 
-    # # ── Summary ───────────────────────────────────
-    # print_summary(jk, boxm, tc_df, banking, sector_df)
+    # ── VaR / CVaR ────────────────────────────────
+    print("\n── VaR / CVaR Analysis (95% & 99%) ──")
+    vc_df = var_cvar_analysis(ret_pre, ret_post, RF_PRE, RF_POST)
+    print(vc_df.to_string(index=False))
+
+    print("\n── Monte Carlo Trial Plot ──")
+    plot_monte_carlo_trials(
+        ret_pre, ret_post, RF_PRE, RF_POST,
+        out_path="Results/Robustness/monte_carlo_var_cvar.png"
+    )
+
+    print("\n── Monte Carlo Return Path Fan Chart ──")
+    plot_monte_carlo_paths(
+        ret_pre, ret_post, RF_PRE, RF_POST,
+        n_paths=1000, horizon=252,
+        out_path="Results/Robustness/monte_carlo_paths.png"
+    )
+
+    # ── Individual stock return tests ─────────────
+    print("\n── Individual Stock Return Tests (Welch's t / BH FDR) ──")
+    stock_test_df = individual_stock_return_tests(
+        ret_pre, ret_post,
+        out_path="Results/Robustness/stock_return_tests.png"
+    )
+    stock_test_df.to_csv("Results/Robustness/stock_return_tests.csv", index=False)
+
+    # ── HHI concentration ─────────────────────────
+    print("\n── HHI Concentration Analysis ──")
+    hhi_vals = plot_hhi_concentration(
+        ret_pre, ret_post, RF_PRE, RF_POST,
+        out_path="Results/Robustness/hhi_concentration.png"
+    )
+    print(f"  Pre TP HHI:  {hhi_vals['Pre TP']:.4f}  "
+          f"(eff N = {1/hhi_vals['Pre TP']:.1f})")
+    print(f"  Post TP HHI: {hhi_vals['Post TP']:.4f}  "
+          f"(eff N = {1/hhi_vals['Post TP']:.1f})")
 
     summary = {
         "JK_SR_pre":         jk["SR_pre_ann"],
@@ -1312,7 +1537,46 @@ def main():
         "boot_B":                    boot_result["B"],
         "boot_n_sig_vol_pts":        boot_result["n_significant_vol_pts"],
         "boot_pct_significant":      boot_result["pct_significant"],
-        "boot_shift_significant":    boot_result["shift_significant"]
+        "boot_shift_significant":    boot_result["shift_significant"],
+        "TC_turnover_pct":           float(tc_df["Turnover (%)"].iloc[0]),
+        "TC_SR_pre_gross":           float(tc_df["SR pre gross"].iloc[0]),
+        "TC_SR_post_gross":          float(tc_df["SR post gross"].iloc[0]),
+        "TC_SR_pre_net":             float(tc_df["SR pre net"].iloc[0]),
+        "TC_SR_post_net":            float(tc_df["SR post net"].iloc[0]),
+        "TC_delta_SR_gross":         float(tc_df["Delta SR gross"].iloc[0]),
+        "TC_delta_SR_net":           float(tc_df["Delta SR net"].iloc[0]),
+        "TC_improvement_survives":   bool(tc_df["Improvement survives"].iloc[0]),
+        "sector_max_gap":            round(float(
+            (sector_df["Nifty50_wt"] - sector_df["Universe_wt"]).abs().max()
+        ), 4),
+        "sector_max_gap_name":       str(sector_df.loc[
+            (sector_df["Nifty50_wt"] - sector_df["Universe_wt"]).abs().idxmax(),
+            "Sector"
+        ]),
+        "decomp_mu_effect_sr":       decomp["mu_effect_sr"],
+        "decomp_sigma_effect_sr":    decomp["sigma_effect_sr"],
+        "decomp_total_sr_gain":      decomp["total_sr_gain"],
+        "HHI_pre_tp":                round(hhi_vals["Pre TP"],   4),
+        "HHI_post_tp":               round(hhi_vals["Post TP"],  4),
+        "HHI_pre_gmv":               round(hhi_vals["Pre GMV"],  4),
+        "HHI_post_gmv":              round(hhi_vals["Post GMV"], 4),
+        "HHI_eff_n_pre_tp":          round(1 / hhi_vals["Pre TP"],  2),
+        "HHI_eff_n_post_tp":         round(1 / hhi_vals["Post TP"], 2),
+        "VaR95_pre_tp_ann":          float(vc_df.loc[vc_df["Strategy"]=="Pre TP",  "VaR 95% (ann)"].iloc[0]),
+        "CVaR95_pre_tp_ann":         float(vc_df.loc[vc_df["Strategy"]=="Pre TP",  "CVaR 95% (ann)"].iloc[0]),
+        "VaR95_post_tp_ann":         float(vc_df.loc[vc_df["Strategy"]=="Post TP", "VaR 95% (ann)"].iloc[0]),
+        "CVaR95_post_tp_ann":        float(vc_df.loc[vc_df["Strategy"]=="Post TP", "CVaR 95% (ann)"].iloc[0]),
+        "VaR99_pre_tp_ann":          float(vc_df.loc[vc_df["Strategy"]=="Pre TP",  "VaR 99% (ann)"].iloc[0]),
+        "CVaR99_pre_tp_ann":         float(vc_df.loc[vc_df["Strategy"]=="Pre TP",  "CVaR 99% (ann)"].iloc[0]),
+        "VaR99_post_tp_ann":         float(vc_df.loc[vc_df["Strategy"]=="Post TP", "VaR 99% (ann)"].iloc[0]),
+        "CVaR99_post_tp_ann":        float(vc_df.loc[vc_df["Strategy"]=="Post TP", "CVaR 99% (ann)"].iloc[0]),
+        "n_sig_stocks_BH":           int(stock_test_df["sig_BH"].sum()),
+        "sig_stocks_increased":      ", ".join(
+            stock_test_df.loc[stock_test_df["sig_BH"] & (stock_test_df["delta_mu"] > 0), "Ticker"].tolist()
+        ),
+        "sig_stocks_decreased":      ", ".join(
+            stock_test_df.loc[stock_test_df["sig_BH"] & (stock_test_df["delta_mu"] < 0), "Ticker"].tolist()
+        ),
         # "Retail_pre":        round(banking["avg_retail_pre"],    4),
         # "Retail_post":       round(banking["avg_retail_post"],   4),
         # "Wholesale_pre":     round(banking["avg_wholesale_pre"], 4),

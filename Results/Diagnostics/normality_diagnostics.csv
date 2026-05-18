@@ -1,0 +1,3 @@
+Period,skewness,excess_kurtosis,JB_stat,JB_pvalue,JB_reject_5pct,ARCH_LM_stat,ARCH_LM_pvalue,ARCH_LM_lags,ARCH_reject_5pct
+Pre-COVID,0.204,5.107,1367.97,0.0,True,11.39,0.044233,5,True
+Post-COVID,-0.311,2.4,221.53,0.0,True,73.25,0.0,5,True
