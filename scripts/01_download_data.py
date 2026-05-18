@@ -18,6 +18,6 @@ prices = yf.download(TICKERS, start='2015-01-01', end='2025-01-01')['Close']
 weekly_prices = prices.resample('W').last()
 monthly_prices = prices.resample('ME').last()
 
-prices.to_csv('Data/prices_daily.csv')
-weekly_prices.to_csv('Data/prices_weekly.csv')
-monthly_prices.to_csv('Data/prices_monthly.csv')
+prices.to_csv('../data/processed/prices_daily.csv')
+weekly_prices.to_csv('../data/processed/prices_weekly.csv')
+monthly_prices.to_csv('../data/processed/prices_monthly.csv')

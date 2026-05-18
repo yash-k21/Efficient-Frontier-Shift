@@ -30,7 +30,7 @@ from scipy.optimize import minimize
 from sklearn.covariance import LedoitWolf
 
 warnings.filterwarnings("ignore")
-os.makedirs("Results/Robustness", exist_ok=True)
+os.makedirs("../results/robustness", exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════
 # CONSTANTS
@@ -137,7 +137,7 @@ WHOLESALE_BANKS = ['PNB.NS', 'BANKBARODA.NS', 'INDUSINDBK.NS']
 
 def load_risk_free_rates():
     xl = pd.read_excel(
-        'Auctions of 91-Day Government of India Treasury Bills.xlsx',
+        '../data/raw/rbi_tbill_91day_yields.xlsx',
         header=5,
         usecols=[1, 16]
     )
@@ -156,7 +156,7 @@ def load_risk_free_rates():
 
 
 def load_prices():
-    prices = pd.read_csv("Data/prices_daily.csv", index_col=0, parse_dates=True)
+    prices = pd.read_csv("../data/processed/prices_daily.csv", index_col=0, parse_dates=True)
     prices = prices[~prices.index.astype(str).str.contains("Price|Ticker", na=False)]
     return prices.astype(float).dropna(axis=1, how="all").sort_index()
 
@@ -489,7 +489,7 @@ def plot_bootstrap_frontier_comparison(ret_pre, ret_post,
     PRE_C  = "#1D9E75"
     POST_C = "#534AB7"
 
-    _CACHE = "Results/Robustness/bootstrap_bands_cache.npz"
+    _CACHE = "../results/robustness/bootstrap_bands_cache.npz"
     if os.path.exists(_CACHE):
         print("  Loading cached bootstrap bands...")
         _c = np.load(_CACHE)
@@ -857,7 +857,7 @@ def plot_frontier_decomposition(ret_pre, ret_post, rf_pre, rf_post,
             fontfamily="monospace")
 
     fig.tight_layout()
-    out = out_path or "Results/Robustness/frontier_decomposition.png"
+    out = out_path or "../results/robustness/frontier_decomposition.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"  [saved] {out}")
@@ -920,7 +920,7 @@ def var_cvar_analysis(ret_pre, ret_post, rf_pre, rf_post, N=100_000):
         })
 
     df = pd.DataFrame(rows)
-    df.to_csv("Results/Robustness/var_cvar.csv", index=False)
+    df.to_csv("../results/robustness/var_cvar.csv", index=False)
     print(f"  [saved] Results/Robustness/var_cvar.csv")
     return df
 
@@ -1020,7 +1020,7 @@ def plot_monte_carlo_trials(ret_pre, ret_post, rf_pre, rf_post,
         fontsize=11.5, color="#222222", y=1.02
     )
     fig.tight_layout()
-    out = out_path or "Results/Robustness/monte_carlo_var_cvar.png"
+    out = out_path or "../results/robustness/monte_carlo_var_cvar.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"  [saved] {out}")
@@ -1133,7 +1133,7 @@ def plot_monte_carlo_paths(ret_pre, ret_post, rf_pre, rf_post,
         fontsize=11.5, color="#222222", y=1.02
     )
     fig.tight_layout()
-    out = out_path or "Results/Robustness/monte_carlo_paths.png"
+    out = out_path or "../results/robustness/monte_carlo_paths.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"  [saved] {out}")
@@ -1225,7 +1225,7 @@ def individual_stock_return_tests(ret_pre, ret_post, alpha=0.05, out_path=None):
     ax.tick_params(axis="y", labelsize=8)
 
     fig.tight_layout()
-    out = out_path or "Results/Robustness/stock_return_tests.png"
+    out = out_path or "../results/robustness/stock_return_tests.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"  [saved] {out}")
@@ -1294,7 +1294,7 @@ def plot_hhi_concentration(ret_pre, ret_post, rf_pre, rf_post,
         "Pre vs Post-COVID tangency concentration (HHI)",
         fontsize=12, fontweight="500", color="#222222", y=1.03)
     fig.tight_layout()
-    out = out_path or "Results/Robustness/hhi_concentration.png"
+    out = out_path or "../results/robustness/hhi_concentration.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"  [saved] {out}")
@@ -1428,7 +1428,7 @@ def main():
     boot_result = plot_bootstrap_frontier_comparison(
         ret_pre, ret_post, RF_PRE, RF_POST,
         B=500,
-        out_path="Results/Robustness/bootstrap_frontier_bands.png"
+        out_path="../results/robustness/bootstrap_frontier_bands.png"
     )
  
 
@@ -1444,10 +1444,10 @@ def main():
     # print("\n── Test 3: Covariance estimator comparison ──")
     # est_df = plot_estimator_comparison(
     #     ret_pre, ret_post, RF_PRE, RF_POST,
-    #     out_path="Results/Robustness/estimator_comparison.png"
+    #     out_path="../results/robustness/estimator_comparison.png"
     # )
     # est_df.to_csv(
-    #     "Results/Robustness/estimator_comparison.csv",
+    #     "../results/robustness/estimator_comparison.csv",
     #     index=False
     # )
     # print("  Estimator SR summary:")
@@ -1456,24 +1456,24 @@ def main():
     # ── Test 4: Transaction costs ─────────────────
     print("\n── Test 4: Transaction cost analysis ──")
     tc_df = transaction_cost_analysis(ret_pre, ret_post, RF_PRE, RF_POST)
-    tc_df.to_csv("Results/Robustness/transaction_costs.csv", index=False)
+    tc_df.to_csv("../results/robustness/transaction_costs.csv", index=False)
     print(tc_df.to_string(index=False))
 
     # ── Test 5: Sector weight check ───────────────
     print("\n── Test 5: Sector weight check ──")
     sector_df = sector_weight_check(
         ret_pre, ret_post,
-        out_path="Results/Robustness/sector_weights.png",
+        out_path="../results/robustness/sector_weights.png",
         rf_pre=RF_PRE, rf_post=RF_POST
     )
-    sector_df.to_csv("Results/Robustness/sector_weights.csv", index=False)
+    sector_df.to_csv("../results/robustness/sector_weights.csv", index=False)
     print(sector_df.to_string(index=False))
 
     # ── Frontier decomposition ────────────────────
     print("\n── Frontier Shift Decomposition (μ vs Σ) ──")
     decomp = plot_frontier_decomposition(
         ret_pre, ret_post, RF_PRE, RF_POST,
-        out_path="Results/Robustness/frontier_decomposition.png"
+        out_path="../results/robustness/frontier_decomposition.png"
     )
     print(f"  μ-only SR gain:  {decomp['mu_effect_sr']:+.4f}")
     print(f"  Σ-only SR gain:  {decomp['sigma_effect_sr']:+.4f}")
@@ -1487,29 +1487,29 @@ def main():
     print("\n── Monte Carlo Trial Plot ──")
     plot_monte_carlo_trials(
         ret_pre, ret_post, RF_PRE, RF_POST,
-        out_path="Results/Robustness/monte_carlo_var_cvar.png"
+        out_path="../results/robustness/monte_carlo_var_cvar.png"
     )
 
     print("\n── Monte Carlo Return Path Fan Chart ──")
     plot_monte_carlo_paths(
         ret_pre, ret_post, RF_PRE, RF_POST,
         n_paths=1000, horizon=252,
-        out_path="Results/Robustness/monte_carlo_paths.png"
+        out_path="../results/robustness/monte_carlo_paths.png"
     )
 
     # ── Individual stock return tests ─────────────
     print("\n── Individual Stock Return Tests (Welch's t / BH FDR) ──")
     stock_test_df = individual_stock_return_tests(
         ret_pre, ret_post,
-        out_path="Results/Robustness/stock_return_tests.png"
+        out_path="../results/robustness/stock_return_tests.png"
     )
-    stock_test_df.to_csv("Results/Robustness/stock_return_tests.csv", index=False)
+    stock_test_df.to_csv("../results/robustness/stock_return_tests.csv", index=False)
 
     # ── HHI concentration ─────────────────────────
     print("\n── HHI Concentration Analysis ──")
     hhi_vals = plot_hhi_concentration(
         ret_pre, ret_post, RF_PRE, RF_POST,
-        out_path="Results/Robustness/hhi_concentration.png"
+        out_path="../results/robustness/hhi_concentration.png"
     )
     print(f"  Pre TP HHI:  {hhi_vals['Pre TP']:.4f}  "
           f"(eff N = {1/hhi_vals['Pre TP']:.1f})")
@@ -1583,7 +1583,7 @@ def main():
         # "Wholesale_post":    round(banking["avg_wholesale_post"],4),
     }
     pd.DataFrame([summary]).to_csv(
-        "Results/Robustness/test_summary.csv",
+        "../results/robustness/test_summary.csv",
         index=False
     )
     print("Saved: Results/Robustness/test_summary.csv")

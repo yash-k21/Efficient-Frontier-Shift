@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import os
 
-os.makedirs('Figures', exist_ok=True)
+os.makedirs('../results/figures', exist_ok=True)
 
 CRISIS_START = '2020-02-01'
 CRISIS_END   = '2021-06-30'
@@ -65,7 +65,7 @@ ax.set_title('NIFTY 50  (Jan 2015 – Dec 2024)', fontsize=13, pad=12, color='#2
 ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:,.0f}'))
 
 fig.tight_layout()
-out = 'Figures/nifty50_timeline.png'
+out = '../results/figures/nifty50_timeline.png'
 fig.savefig(out, dpi=200, bbox_inches='tight', facecolor='white')
 plt.close(fig)
 print(f'Saved: {out}')
@@ -150,7 +150,7 @@ ax2.set_title('NIFTY 50 — Daily Log Returns  (Jan 2015 – Dec 2024)',
 ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1%}'))
 
 fig2.tight_layout()
-out2 = 'Figures/nifty50_returns.png'
+out2 = '../results/figures/nifty50_returns.png'
 fig2.savefig(out2, dpi=200, bbox_inches='tight', facecolor='white')
 plt.close(fig2)
 print(f'Saved: {out2}')

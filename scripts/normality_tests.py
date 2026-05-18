@@ -44,7 +44,7 @@ from sklearn.covariance import LedoitWolf
 from scipy.optimize import minimize
 
 warnings.filterwarnings("ignore")
-os.makedirs("Results/Diagnostics", exist_ok=True)
+os.makedirs("../results/diagnostics", exist_ok=True)
 
 # ── period constants (must match 5_robustness.py) ──────────────────────────
 P = {
@@ -64,7 +64,7 @@ CRI_C  = "#E74C3C"
 
 def load_risk_free_rates():
     xl = pd.read_excel(
-        "Auctions of 91-Day Government of India Treasury Bills.xlsx",
+        "../data/raw/rbi_tbill_91day_yields.xlsx",
         header=5, usecols=[1, 16]
     )
     xl.columns = ["Date of Auction", "Weighted Avg Yield (per cent)"]
@@ -80,7 +80,7 @@ def load_risk_free_rates():
 
 
 def load_prices():
-    prices = pd.read_csv("Data/prices_daily.csv", index_col=0, parse_dates=True)
+    prices = pd.read_csv("../data/processed/prices_daily.csv", index_col=0, parse_dates=True)
     prices = prices[~prices.index.astype(str).str.contains(
         "Price|Ticker", na=False)]
     return prices.astype(float).dropna(axis=1, how="all").sort_index()
@@ -335,8 +335,8 @@ def load_nifty50_index(prices):
     Falls back to equal-weighted portfolio of available stocks.
     """
     # Try common filenames for the index
-    for fname in ["Data/NIFTY50_index.csv", "Data/nifty50.csv",
-                  "Data/^NSEI.csv", "NIFTY50.csv"]:
+    for fname in ["../data/processed/NIFTY50_index.csv", "../data/processed/nifty50.csv",
+                  "../data/processed/^NSEI.csv", "NIFTY50.csv"]:
         if os.path.exists(fname):
             idx = pd.read_csv(fname, index_col=0, parse_dates=True)
             # assume it has a 'Close' or 'Adj Close' column, or is a single column
@@ -504,12 +504,12 @@ def main():
     diag_df, exc_pre, exc_post = run_normality_diagnostics(
         ret_pre, ret_post, w_pre, w_post, rf_pre, rf_post
     )
-    diag_df.to_csv("Results/Diagnostics/normality_diagnostics.csv")
+    diag_df.to_csv("../results/diagnostics/normality_diagnostics.csv")
     print("  Saved: Results/Diagnostics/normality_diagnostics.csv")
 
     plot_qq_and_acf_squared(
         exc_pre, exc_post,
-        out_path="Results/Diagnostics/normality_qq_acf.png"
+        out_path="../results/diagnostics/normality_qq_acf.png"
     )
 
     # ── Summary ───────────────────────────────────────────────────

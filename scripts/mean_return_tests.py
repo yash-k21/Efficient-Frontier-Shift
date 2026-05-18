@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-os.makedirs("Results/Diagnostics", exist_ok=True)
+os.makedirs("../results/diagnostics", exist_ok=True)
 
 PRE_START  = "2015-01-01"
 PRE_END    = "2020-01-31"
@@ -30,7 +30,7 @@ ANN        = 252
 
 
 def load_data():
-    prices = pd.read_csv("Data/prices_daily.csv",
+    prices = pd.read_csv("../data/processed/prices_daily.csv",
                          index_col=0, parse_dates=True)
     prices = prices[~prices.index.astype(str).str.contains(
         "Price|Ticker", na=False)]
@@ -183,7 +183,7 @@ def main():
         r10 = int(results[sfx10].sum())
         print(f"  {label:25s}  {r5:>5}/{n}   {r10:>5}/{n}")
 
-    results.to_csv("Results/Diagnostics/mean_return_tests.csv")
+    results.to_csv("../results/diagnostics/mean_return_tests.csv")
     print("\n  Saved: Results/Diagnostics/mean_return_tests.csv\n")
 
 

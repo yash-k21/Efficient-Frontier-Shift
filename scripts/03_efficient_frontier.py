@@ -8,7 +8,7 @@ from sklearn.covariance import LedoitWolf
 import os
 
 np.random.seed(42)
-os.makedirs('Figures', exist_ok=True)
+os.makedirs('../results/figures', exist_ok=True)
 
 # ── Colors ──────────────────────────────────────────────────────────
 PRE_C  = '#1D9E75'   # teal
@@ -28,7 +28,7 @@ ANNUALISE = {'daily': 252, 'weekly': 52}
 
 def load_risk_free_rates():
     xl = pd.read_excel(
-        'Auctions of 91-Day Government of India Treasury Bills.xlsx',
+        '../data/raw/rbi_tbill_91day_yields.xlsx',
         header=5,
         usecols=[1, 16]
     )
@@ -49,7 +49,7 @@ def load_risk_free_rates():
 # ════════════════════════════════════════════════════════════════════
 
 def load_prices():
-    prices = pd.read_csv('Data/prices_daily.csv', index_col=0, parse_dates=True)
+    prices = pd.read_csv('../data/processed/prices_daily.csv', index_col=0, parse_dates=True)
     prices = prices[~prices.index.astype(str).str.contains('Price|Ticker', na=False)]
     return prices.astype(float).dropna(axis=1, how='all').sort_index()
 
@@ -330,7 +330,7 @@ def plot_crisis_heatmap(log_ret_daily):
     ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
 
     fig.tight_layout()
-    fig.savefig('Figures/crisis_correlation.png', dpi=200, bbox_inches='tight', facecolor='white')
+    fig.savefig('../results/figures/crisis_correlation.png', dpi=200, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     print(f"  Saved: Figures/crisis_correlation.png")
 
@@ -425,11 +425,11 @@ def run_freq(freq, log_ret, rf_pre, rf_post):
 
     plot_frontier(mu_pre, cov_pre, mu_post, cov_post,
                   rf_pre, rf_post, freq,
-                  f'Figures/frontier_combined_{freq}.png')
+                  f'../results/figures/frontier_combined_{freq}.png')
 
     plot_tangency_weights(mu_pre, cov_pre, mu_post, cov_post,
                           rf_pre, rf_post, tickers, freq,
-                          f'Figures/tangency_weights_{freq}.png')
+                          f'../results/figures/tangency_weights_{freq}.png')
 
 
 def main():
@@ -448,7 +448,7 @@ def main():
     plot_crisis_heatmap(log_ret_daily)
 
     print('\n=== ROLLING VOLATILITY ===')
-    plot_rolling_vol(log_ret_daily, 'Figures/rolling_volatility.png')
+    plot_rolling_vol(log_ret_daily, '../results/figures/rolling_volatility.png')
 
     print('\nDone.')
 
